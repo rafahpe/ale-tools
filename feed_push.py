@@ -193,7 +193,7 @@ def json_factory(pprint):
 # Adds two properties to each event:
 # - "opcode": 0 for UP_UPDATE, 1 for OP_ADD, -1 for OP_DELETE.
 # - "datetime": timestamp of the event, in datetime format
-def mongo_factory(mongouri):
+def mongo_factory(mongouri, cap=0):
     import pymongo # Delayed import - only if this factory is used.
     client = pymongo.MongoClient(mongouri,
         # Redhat (6.x) + python (2.6) + mongo (3.5) is a difficult
@@ -207,6 +207,7 @@ def mongo_factory(mongouri):
     def action(events):
         topics = defaultdict(list)
         result = list()
+        capped = dict()
         for event in events:
             # Mandatory fields
             topic = event.get("topic", None)
@@ -238,6 +239,17 @@ def mongo_factory(mongouri):
             topics[topic].append(event)
         # Insert documents in the corresponding topic collection
         for topic, docs in topics.iteritems():
+            if cap > 0 and capped.get(topic, None) is None:
+                # If we got a cap and had not seen the topic before,
+                # then try to create a capped collection
+                try:
+                    db.create_collection(topic, capped=True, size=cap)
+                except pymongo.errors.CollectionInvalid:
+                    pass
+                except pymongo.errors.OperationFailure:
+                    pass
+                finally:
+                    capped[topic] = True
             result.append("%s: %d" % (topic, len(docs)))
             db[topic].insert_many(docs)
         return ", ".join(result)
@@ -309,7 +321,10 @@ if __name__ == "__main__":
     parser.add_option("-n", "--numprocs", action="store", dest="numprocs",
         default=DEFAULT_PROCS, metavar="NUMBER_OF_PROCS",
         help="Number of transform processes to run")
-    parser.add_option("-c", "--chunksize", action="store", dest="chunksize",
+    parser.add_option("-c", "--capsize", action="store", dest="capsize",
+        default=0, metavar="CAP SIZE (MBytes)",
+        help="Cap mongodb collections to the given size")
+    parser.add_option("-s", "--chunksize", action="store", dest="chunksize",
         default=DEFAULT_CHUNK, metavar="CHUNK_SIZE",
         help="Size of chunk for each process")
     parser.add_option("-r", action="store_true", dest="rate",
@@ -336,7 +351,8 @@ if __name__ == "__main__":
     if mongouri == "":
         factory = functools.partial(json_factory, options.pprint)
     else:
-        factory = functools.partial(mongo_factory, mongouri)
+        capsize = int(options.capsize) << 20 # MBytes to bytes
+        factory = functools.partial(mongo_factory, mongouri, capsize)
         # The mongo factory does not expect individual events, but lists
         # of events. We have to wrap the event iterator, and then use
         # chunksize = 1 for the pool, so we do not chunk twice.
