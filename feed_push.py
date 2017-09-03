@@ -212,7 +212,9 @@ def mongo_factory(mongouri):
             topic = event.get("topic", None)
             ts    = event.get("timestamp", None)
             op    = event.get("op", None)
-            if topic is None or op is None or ts is None:
+            # Some messages, like visibility_records, do not have an opcode.
+            # But all of them have topic and timestamp.
+            if topic is None or ts is None:
                 result.append("invalid: %s" % json.dumps(event))
                 continue
             # We will have a collection per topic.
@@ -221,15 +223,16 @@ def mongo_factory(mongouri):
             topic = topic.split("/", 1)[0]
             # Store op code as an integer
             # (OP_ADD = 1, OP_UPDATE = 0, OP_DELETE = -1)
-            if   op == "OP_UPDATE":
-                opcode = 0
-            elif op == "OP_ADD":
-                opcode = 1
-            elif op == "OP_DELETE":
-                opcode = -1
-            else:
-                return None
-            event["opcode"] = opcode
+            if op is not None:
+                if   op == "OP_UPDATE":
+                    opcode = 0
+                elif op == "OP_ADD":
+                    opcode = 1
+                elif op == "OP_DELETE":
+                    opcode = -1
+                else:
+                    return None
+                event["opcode"] = opcode
             # Also store timestamp as a datetime
             event["datetime"] = datetime.fromtimestamp(ts)
             topics[topic].append(event)
