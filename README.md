@@ -39,3 +39,35 @@ You can tell *feed_push* to try to create capped collections with the '*-c*' fla
 feed-reader -e tcp://<ALE server>:7779 | python feed_push.py \
    -m "mongodb:<username>:<pass>@mongodb-uri" -c 32
 ```
+
+Example of mongo query you can use to get the last known position of every device seen by ALE in an interval of time:
+
+```json
+db.location.aggregate([
+  { $match: {
+      $and: [
+        { datetime: { $gte: ISODate("2017-09-03 16:00:00") } },
+        { datetime: { $lte: ISODate("2017-09-03 18:00:00") } }
+      ]
+    },
+  },
+  { $sort: {
+      timestamp: -1
+    }
+  },
+  { $group: {
+      _id: "$hashed_sta_eth_mac",
+      datetime:       { $first: "$datetime" },
+      opcode:         { $first: "$opcode" },
+      campus_id:      { $first: "$campus_id" },
+      floor_id:       { $first: "$floor_id" },
+      sta_location_x: { $first: "$sta_location_x" },
+      sta_location_y: { $first: "$sta_location_y" }
+    }
+  },
+  { $match: {
+      opcode: { $gte: 0 }
+    }
+  }
+])
+```
