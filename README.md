@@ -42,7 +42,7 @@ feed-reader -e tcp://<ALE server>:7779 | python feed_push.py \
 
 Example of mongo query you can use to get the last known position of every device seen by ALE in an interval of time:
 
-```json
+```js
 db.location.aggregate([
   { $match: {
       $and: [
