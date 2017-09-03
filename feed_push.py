@@ -68,7 +68,7 @@ def events_from_lines(lines):
                 # discard it
                 nesting = list()
                 current = dict()
-            # Otherwise, if we have a well-formed event, return it
+            # Otherwise, if we have a well-formed event, yield it
             elif len(current) > 0:
                 yield current
                 current = dict()
@@ -83,9 +83,17 @@ def events_from_lines(lines):
         # Check for un-nesting
         elif line.endswith("}") and len(nesting) > 0:
             top, nested = nesting.pop()
+            # Subgroups with just one item are collapsed.
+            if len(current) == 1:
+                value = current.values()[0]
+                # Many of these nested groups are MAC addresses
+                if nested.endswith("_mac"):
+                    value = _trymac(value)
+                # Save the attribute at top. Ignore the key.
+                top[nested] = value
             # If we are not at the top, save the current item as a
             # property of the upper (top) item.
-            if len(nesting) > 0:
+            elif len(nesting) > 0:
                 prev = top.setdefault(nested, current)
                 if prev != current:
                     # Several instances of this field!
@@ -98,14 +106,14 @@ def events_from_lines(lines):
                     # And restore the list
                     top[nested] = prev
             # If we are back at the top, as a special case, we want to
-            # flatten the item.
+            # flatten the item (move all properties to top)
             else:
                 for k, v in current.iteritems():
                     top[k] = v
             # And work with the "top" object from now on.
             current = top
         # Check for any other parameter
-        elif line != "" and not line.isspace():
+        elif line and not line.isspace():
             parts = line.split(":", 1)
             if len(parts) == 2:
                 key = parts[0].strip()
@@ -113,20 +121,41 @@ def events_from_lines(lines):
                 # length check avoids trying to convert MACs, hashes to ints.
                 # it is just accurate enough for our purposes.
                 if val and (len(val) < 12):
-                    # This should catch both positive counters (int)
-                    # and locations (float). If ALE yields negative numbers
-                    # for any of these, let me know...
-                    if val.replace(".", "", 1).isdigit():
-                        try:
-                            newVal = float(val)
-                        except ValueError:
-                            pass
-                        else:
-                            val = newVal
+                    val = _trynumber(val)
                 current[key] = val
     # No more lines. If we have a current object, yield it.
     if len(current) > 0:
         yield current
+
+# Try to format the value as a number
+def _trynumber(value):
+    # Let's catch true / false here too
+    if value in ["true", "false"]:
+        return True if value == "true" else False
+    # This should catch both positive counters (int)
+    # and locations (float). If ALE yields negative numbers
+    # for any of these, let me know...
+    clean = value.replace(".", "", 1)
+    if clean.isdigit():
+        try:
+             # If there was no ".", try with int
+            if len(value) == len(clean):
+                return int(value)
+            # Otherwise, try with float
+            else:
+                return float(value)
+        except ValueError:
+            pass
+    return value
+
+# Try to format the value as a MAC address.
+def _trymac(value):
+    # Remove separator characters
+    mac = value.translate(None, ".:-").lower()
+    if mac.isalnum() and len(mac) == 12:
+        # colon-separated, lower format
+        return ':'.join(mac[i:i+2] for i in range(0,12,2))
+    return value
 
 # Distributes the events across several processes:
 # - Creates a new Pool with "numprocs" processes
