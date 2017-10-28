@@ -61,7 +61,8 @@ db.location.aggregate([
   { $match: {
       $and: [
         { datetime: { $gte: ISODate("2017-09-03 16:00:00") } },
-        { datetime: { $lte: ISODate("2017-09-03 18:00:00") } }
+        { datetime: { $lte: ISODate("2017-09-03 18:00:00") } },
+        { opcode: { $gte: 0 }}
       ]
     },
   },
@@ -78,10 +79,42 @@ db.location.aggregate([
       sta_location_x: { $first: "$sta_location_x" },
       sta_location_y: { $first: "$sta_location_y" }
     }
-  },
-  { $match: {
-      opcode: { $gte: 0 }
-    }
   }
 ])
+```
+
+And this aggregation yields the sequence of Station events in a given interval:
+
+```js
+db.station.aggregate([
+  { $match: {
+      $and: [
+        { datetime: { $gte: ISODate("2017-09-03 16:00:00") } },
+        { datetime: { $lte: ISODate("2017-09-03 18:00:00") } }
+      ]
+    },
+  },
+  { $sort: { 
+      hashed_sta_eth_mac: 1,
+      timestamp: 1
+    }
+  },
+  { $project: {
+      hashed_sta_eth_mac: 1,
+      timestamp: 1,
+      datetime: 1,
+      opcode: 1,
+      op: 1,
+      bssid: 1,
+      ap_name: 1
+    }
+  },
+  { $group: {
+      _id: {
+        mac: "$hashed_sta_eth_mac"
+      },
+      events: { $push: "$$ROOT" }
+    }
+  }
+]) 
 ```
