@@ -116,5 +116,5 @@ db.station.aggregate([
       events: { $push: "$$ROOT" }
     }
   }
-]) 
+], { allowDiskUse: true }) 
 ```
